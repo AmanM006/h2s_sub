@@ -7,32 +7,53 @@ import { ref, set } from 'firebase/database';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Navigation } from 'lucide-react';
+import { MAP_CONFIG, FIREBASE_HOTSPOTS_PATH, FACILITY_EMOJI } from '@/lib/constants';
 
 const containerStyle = {
   width: '100%',
   height: '100%'
 };
 
-export type MarkerData = {
+/**
+ * Represents the data structure for a venue facility marker.
+ */
+export interface MarkerData {
+  /** Unique identifier for the marker */
   id: string;
+  /** Human-readable name of the facility */
   name: string;
+  /** Type of facility (e.g., food, restroom, exit) */
   type: string;
+  /** Current estimated wait time in minutes */
   waitTime: number;
+  /** Latitude coordinate */
   lat: number;
+  /** Longitude coordinate */
   lng: number;
-};
+}
 
 const libraries: ("marker")[] = ["marker"];
 
-function AdvancedMarker({ 
-  map, 
-  data, 
-  onClick 
-}: { 
-  map: google.maps.Map; 
+/**
+ * Props for the AdvancedMarker component.
+ */
+interface AdvancedMarkerProps {
+  /** Google Map instance */
+  map: google.maps.Map;
+  /** Data for the marker to display */
   data: MarkerData;
+  /** Callback fired when the marker is clicked */
   onClick: (data: MarkerData) => void;
-}) {
+}
+
+/**
+ * Custom Advanced Marker component for Google Maps.
+ * Renders a stylized marker with an icon and wait time badge.
+ * 
+ * @param props - The component props
+ * @returns JSX.Element representing the custom marker overlay
+ */
+function AdvancedMarker({ map, data, onClick }: AdvancedMarkerProps) {
   const [marker, setMarker] = useState<google.maps.marker.AdvancedMarkerElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -59,31 +80,46 @@ function AdvancedMarker({
   }, [map, data, onClick]);
 
   return (
-    <div ref={contentRef} className="cursor-pointer group flex flex-col items-center">
-      <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-transparent group-hover:border-indigo-500 transition-all overflow-hidden relative">
+    <div ref={contentRef} className="cursor-pointer group flex flex-col items-center" aria-label={`${data.name} marker, ${data.waitTime} minutes wait`}>
+      <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-transparent group-hover:border-indigo-500 transition-all overflow-hidden relative" aria-hidden="true">
         <span className="text-xl font-bold text-gray-800">
-          {data.type === 'food' ? '🍔' : data.type === 'restroom' ? '🚻' : '🚪'}
+          {FACILITY_EMOJI[data.type] || '📍'}
         </span>
       </div>
       <div className={`mt-1 px-3 py-1 rounded-full text-xs font-bold text-white shadow-md border border-white/20 backdrop-blur-md flex items-center gap-1 ${
         data.waitTime < 5 ? 'bg-green-600' : data.waitTime > 15 ? 'bg-red-600' : 'bg-yellow-600 text-gray-900'
       }`}>
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
         {data.waitTime}
       </div>
     </div>
   );
 }
 
+/**
+ * Props for the StadiumMapComponent.
+ */
+interface StadiumMapProps {
+  /** The currently selected location/marker */
+  activeLocation?: MarkerData | null;
+  /** Callback fired when a location is selected or deselected */
+  onLocationSelect?: (location: MarkerData | null) => void;
+  /** List of all available locations to render as markers */
+  locationsList: MarkerData[];
+}
+
+/**
+ * Interactive Google Map component for the stadium.
+ * Displays facility markers, handles geolocation, and renders walking routes.
+ * 
+ * @param props - The component props
+ * @returns JSX.Element representing the interactive map
+ */
 function StadiumMapComponent({
   activeLocation,
   onLocationSelect,
   locationsList
-}: {
-  activeLocation?: MarkerData | null,
-  onLocationSelect?: (location: MarkerData | null) => void,
-  locationsList: MarkerData[]
-}) {
+}: StadiumMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
@@ -91,7 +127,7 @@ function StadiumMapComponent({
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [center, setCenter] = useState({ lat: 23.0919, lng: 72.5975 });
+  const [center, setCenter] = useState<{ lat: number; lng: number }>(MAP_CONFIG.DEFAULT_CENTER);
   const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
   
   const currentActiveMarker = activeLocation !== undefined ? activeLocation : null;
@@ -120,21 +156,31 @@ function StadiumMapComponent({
     setDirectionsResponse(null); // Reset directions on new selection
   }, [onLocationSelect]);
 
+  /**
+   * Generates dummy marker data based on the provided coordinates and pushes it to Firebase.
+   * Useful for testing the application from different physical locations.
+   * 
+   * @param lat - Base latitude for dummy markers
+   * @param lng - Base longitude for dummy markers
+   */
   const generateDummyMarkers = (lat: number, lng: number) => {
-    const newMarkers = {
-      "food_1": { name: "Burger Stand", type: "food", waitTime: Math.floor(Math.random() * 20) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
-      "food_2": { name: "Pizza Corner", type: "food", waitTime: Math.floor(Math.random() * 15) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
-      "restroom_1": { name: "Restroom (East)", type: "restroom", waitTime: Math.floor(Math.random() * 5) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
-      "restroom_2": { name: "Restroom (West)", type: "restroom", waitTime: Math.floor(Math.random() * 5) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
-      "exit_1": { name: "Main Exit", type: "exit", waitTime: Math.floor(Math.random() * 10) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
+    const newMarkers: Record<string, Omit<MarkerData, 'id'>> = {
+      "food_1": { name: "Burger Stand", type: "food", waitTime: Math.floor(Math.random() * 20) + 1, lat: lat + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS, lng: lng + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS },
+      "food_2": { name: "Pizza Corner", type: "food", waitTime: Math.floor(Math.random() * 15) + 1, lat: lat + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS, lng: lng + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS },
+      "restroom_1": { name: "Restroom (East)", type: "restroom", waitTime: Math.floor(Math.random() * 5) + 1, lat: lat + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS, lng: lng + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS },
+      "restroom_2": { name: "Restroom (West)", type: "restroom", waitTime: Math.floor(Math.random() * 5) + 1, lat: lat + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS, lng: lng + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS },
+      "exit_1": { name: "Main Exit", type: "exit", waitTime: Math.floor(Math.random() * 10) + 1, lat: lat + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS, lng: lng + (Math.random() - 0.5) * MAP_CONFIG.MARKER_RADIUS },
     };
   
-    const hotspotsRef = ref(db, 'venue/hotspots');
+    const hotspotsRef = ref(db, FIREBASE_HOTSPOTS_PATH);
     set(hotspotsRef, newMarkers).then(() => {
       console.log("Updated dummy markers in Firebase.");
     }).catch(err => console.error("Error setting markers:", err));
   };
 
+  /**
+   * Retrieves the user's current location, centers the map, and generates nearby dummy markers.
+   */
   const locateMe = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((position) => {
@@ -145,7 +191,7 @@ function StadiumMapComponent({
         setCenter(newCenter);
         if (map) {
           map.panTo(newCenter);
-          map.setZoom(16);
+          map.setZoom(MAP_CONFIG.DEFAULT_ZOOM);
         }
         generateDummyMarkers(newCenter.lat, newCenter.lng);
         setDirectionsResponse(null); // Clear directions
@@ -159,13 +205,13 @@ function StadiumMapComponent({
     }
   };
 
+  /**
+   * Calculates and displays a walking route from the map's current center to the active marker.
+   */
   const calculateRoute = () => {
     if (!currentActiveMarker) return;
     
-    // Use the map's current center as the origin for directions
-    // Ideally we would track user location, but map center is a good proxy since Locate Me centers the map
     const origin = center; 
-    
     const directionsService = new window.google.maps.DirectionsService();
     
     directionsService.route(
@@ -190,11 +236,11 @@ function StadiumMapComponent({
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={center}
-        zoom={16}
+        zoom={MAP_CONFIG.DEFAULT_ZOOM}
         onLoad={onLoad}
         onUnmount={onUnmount}
         options={{
-          mapId: "DEMO_MAP_ID",
+          mapId: MAP_CONFIG.MAP_ID,
           disableDefaultUI: true,
         }}
       >
@@ -237,8 +283,8 @@ function StadiumMapComponent({
         <Card className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-[#1C1C1C]/90 backdrop-blur-xl border border-white/10 text-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-20">
           <div className="p-5 flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
-                <span className="text-xl">{currentActiveMarker.type === 'food' ? '🍔' : currentActiveMarker.type === 'restroom' ? '🚻' : '🚪'}</span>
+              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0" aria-hidden="true">
+                <span className="text-xl">{FACILITY_EMOJI[currentActiveMarker.type] || '📍'}</span>
               </div>
               <div>
                 <h3 className="font-bold text-lg">{currentActiveMarker.name}</h3>
@@ -247,8 +293,8 @@ function StadiumMapComponent({
             </div>
             
             <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 border border-white/10 text-xs font-medium">
-              <div className="flex items-center gap-2"><span className="text-lg">🕒</span> {currentActiveMarker.waitTime} min wait</div>
-              <div className="w-px h-4 bg-white/20"></div>
+              <div className="flex items-center gap-2"><span className="text-lg" aria-hidden="true">🕒</span> {currentActiveMarker.waitTime} min wait</div>
+              <div className="w-px h-4 bg-white/20" aria-hidden="true"></div>
               <div className="text-green-400 font-bold">Fastest</div>
             </div>
             
@@ -269,7 +315,7 @@ function StadiumMapComponent({
               if (onLocationSelect) onLocationSelect(null);
             }}
             className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            aria-label="Close details"
+            aria-label="Close location details"
           >
             <span aria-hidden="true">✕</span>
           </button>
@@ -277,14 +323,17 @@ function StadiumMapComponent({
       )}
     </div>
   ) : (
-    <div className="w-full h-full flex items-center justify-center bg-[#111111] text-white">
+    <div className="w-full h-full flex items-center justify-center bg-[#111111] text-white" aria-live="polite" aria-busy="true">
       <div className="flex flex-col items-center gap-2">
-        <span className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <span className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
         <span className="text-sm font-medium">Loading Map...</span>
       </div>
     </div>
   );
 }
 
+/**
+ * Memoized version of the StadiumMapComponent to prevent unnecessary re-renders.
+ */
 const StadiumMap = memo(StadiumMapComponent);
 export default StadiumMap;

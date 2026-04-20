@@ -5,33 +5,56 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { db } from '@/lib/firebase';
 import { ref, get } from 'firebase/database';
 import { z } from 'zod';
-import { logInfo, logError } from '@/lib/gcp-logger';
+import { logInfo, logError, logWarning } from '@/lib/gcp-logger';
+import { FIREBASE_HOTSPOTS_PATH, GEMINI_MODEL, CHAT_LIMITS, VENUE_COPILOT_SYSTEM_PROMPT } from '@/lib/constants';
 
+/** Google Generative AI client instance */
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Zod schema for strict input validation
+/** Zod schema for strict input validation with length limits to prevent payload attacks */
 const chatRequestSchema = z.object({
-  message: z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long'),
+  message: z.string()
+    .min(CHAT_LIMITS.MIN_MESSAGE_LENGTH, 'Message cannot be empty')
+    .max(CHAT_LIMITS.MAX_MESSAGE_LENGTH, `Message cannot exceed ${CHAT_LIMITS.MAX_MESSAGE_LENGTH} characters`),
   venueData: z.array(
     z.object({
       id: z.string(),
-      name: z.string(),
-      type: z.string(),
-      waitTime: z.number(),
-      lat: z.number(),
-      lng: z.number(),
+      name: z.string().max(200),
+      type: z.string().max(50),
+      waitTime: z.number().min(0).max(999),
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
     })
-  ).optional().default([]),
+  ).max(50).optional().default([]),
 });
 
-export async function POST(req: NextRequest) {
+/** Represents a parsed venue data item from the client or Firebase */
+interface VenueDataItem {
+  id: string;
+  name: string;
+  type: string;
+  waitTime: number;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * POST handler for the chat API route.
+ * Validates input with zod, fetches latest venue data from Firebase,
+ * constructs a spatially-aware system prompt, and generates a response
+ * using the Gemini 2.5 Flash model.
+ *
+ * @param req - The incoming Next.js request object
+ * @returns JSON response with the AI-generated reply or an error
+ */
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body = await req.json();
+    const body: unknown = await req.json();
 
     // Validate and sanitize input with zod
     const parseResult = chatRequestSchema.safeParse(body);
     if (!parseResult.success) {
-      logWarning('Invalid chat request', { errors: parseResult.error.flatten() });
+      await logWarning('Invalid chat request', { errors: parseResult.error.flatten() });
       return NextResponse.json(
         { error: parseResult.error.issues[0]?.message || "Invalid input" },
         { status: 400 }
@@ -42,10 +65,10 @@ export async function POST(req: NextRequest) {
 
     await logInfo('Chat request received', { messageLength: message.length });
 
-    // Fetch wait times from Firebase
-    let latestVenueData = venueData;
+    // Fetch latest wait times from Firebase (fallback to client-provided data)
+    let latestVenueData: VenueDataItem[] = venueData;
     try {
-      const snapshot = await get(ref(db, 'venue/hotspots'));
+      const snapshot = await get(ref(db, FIREBASE_HOTSPOTS_PATH));
       if (snapshot.exists()) {
         const data = snapshot.val();
         latestVenueData = Object.keys(data).map(key => ({ id: key, ...data[key] }));
@@ -54,19 +77,20 @@ export async function POST(req: NextRequest) {
       console.log("Firebase fetch failed in API route. Using provided venueData.", error);
     }
 
-    const waitTimesString = latestVenueData && latestVenueData.length > 0 
-      ? latestVenueData.map((item: any) => `${item.name} (${item.type}): Wait time ${item.waitTime} mins`).join(' | ')
+    /** Format venue data into a human-readable string for the AI prompt */
+    const waitTimesString: string = latestVenueData && latestVenueData.length > 0
+      ? latestVenueData.map((item: VenueDataItem) => `${item.name} (${item.type}): Wait time ${item.waitTime} mins`).join(' | ')
       : "No live data available.";
 
-    const systemPrompt = `You are a stadium navigation AI. You have access to the following live facilities and wait times: [${waitTimesString}]. If a user asks where to go, you MUST calculate the best option based on wait times. Give explicit directions based on the data. Never give generic answers like 'sounds good'.`;
+    const systemPrompt = VENUE_COPILOT_SYSTEM_PROMPT(waitTimesString);
 
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      systemInstruction: systemPrompt 
+    const model = genAI.getGenerativeModel({
+      model: GEMINI_MODEL,
+      systemInstruction: systemPrompt
     });
-    
+
     const result = await model.generateContent(message);
-    const text = result.response.text();
+    const text: string = result.response.text();
 
     await logInfo('Chat response generated', { responseLength: text.length });
 
@@ -76,9 +100,4 @@ export async function POST(req: NextRequest) {
     console.error("Chat API Error:", error);
     return NextResponse.json({ error: "Failed to generate response" }, { status: 500 });
   }
-}
-
-// Re-export for convenience — avoids circular import in tests
-function logWarning(msg: string, meta?: Record<string, unknown>) {
-  import('@/lib/gcp-logger').then(m => m.logWarning(msg, meta)).catch(() => console.warn(msg, meta));
 }
