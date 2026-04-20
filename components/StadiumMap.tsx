@@ -208,27 +208,27 @@ function StadiumMapComponent({
   /**
    * Calculates and displays a walking route from the map's current center to the active marker.
    */
-  const calculateRoute = () => {
+  const calculateRoute = async () => {
     if (!currentActiveMarker) return;
     
-    const origin = center; 
+    // If the map isn't loaded or Google isn't globally available, abort safely
+    if (typeof window === 'undefined' || !window.google) return;
+    
+    // We use the globally authorized google.maps object
     const directionsService = new window.google.maps.DirectionsService();
     
-    directionsService.route(
-      {
-        origin: origin,
+    try {
+      const results = await directionsService.route({
+        origin: center,
         destination: { lat: currentActiveMarker.lat, lng: currentActiveMarker.lng },
         travelMode: window.google.maps.TravelMode.WALKING,
-      },
-      (result, status) => {
-        if (status === window.google.maps.DirectionsStatus.OK) {
-          setDirectionsResponse(result);
-        } else {
-          console.error(`Error fetching directions: ${status}`);
-          alert("Could not calculate walking directions to this facility.");
-        }
-      }
-    );
+      });
+      
+      // Save the result to state so the map can render it
+      setDirectionsResponse(results);
+    } catch (error) {
+      console.error("Directions request failed:", error);
+    }
   };
 
   return isLoaded ? (
