@@ -101,25 +101,26 @@ export default function Home() {
         {/* Header Section */}
         <div className="px-6 pt-8 pb-4 flex flex-col gap-6 shrink-0">
           <div className="flex items-center justify-between">
-            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full w-8 h-8">
-              <ArrowLeft className="w-5 h-5" />
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full w-8 h-8" aria-label="Go back">
+              <ArrowLeft className="w-5 h-5" aria-hidden="true" />
             </Button>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-black">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-black" aria-hidden="true">
                 <TriangleAlert className="w-6 h-6" />
               </div>
               <span className="font-bold text-lg tracking-wide">Venue Copilot</span>
             </div>
-            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full w-8 h-8">
-              <Info className="w-5 h-5" />
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full w-8 h-8" aria-label="Information">
+              <Info className="w-5 h-5" aria-hidden="true" />
             </Button>
           </div>
 
           {/* Tab/Filter options */}
           <div className="flex items-center gap-3 text-sm">
             <div className="flex-1">
-              <span className="text-gray-400 text-xs block mb-1">Show me:</span>
+              <span className="text-gray-400 text-xs block mb-1" id="filter-label">Show me:</span>
               <select 
+                aria-labelledby="filter-label"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 className="w-full bg-[#2A2A2A] border border-white/10 text-white hover:bg-white/10 h-9 rounded-xl px-3 outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer"
@@ -132,8 +133,9 @@ export default function Home() {
               </select>
             </div>
             <div className="flex-1">
-              <span className="text-gray-400 text-xs block mb-1">Sort by:</span>
+              <span className="text-gray-400 text-xs block mb-1" id="sort-label">Sort by:</span>
               <select 
+                aria-labelledby="sort-label"
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
                 className="w-full bg-[#2A2A2A] border border-white/10 text-white hover:bg-white/10 h-9 rounded-xl px-3 outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer"
@@ -155,7 +157,7 @@ export default function Home() {
                 <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
                 AI Assistant
               </h3>
-              <div className="flex flex-col gap-4 max-h-[250px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
+              <div className="flex flex-col gap-4 max-h-[250px] overflow-y-auto pr-2" role="log" aria-live="polite" aria-label="Chat messages" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
                 {messages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[85%] p-3 rounded-2xl text-sm shadow-md ${
@@ -183,6 +185,7 @@ export default function Home() {
             {/* Chat Input moved below chat window */}
             <form onSubmit={sendMessage} className="relative mt-1">
               <Input 
+                aria-label="Chat message"
                 placeholder="Ask about lines, exits, food..." 
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -193,10 +196,11 @@ export default function Home() {
                 type="submit" 
                 size="icon" 
                 variant="ghost" 
+                aria-label="Send message"
                 disabled={isLoading || !input.trim()}
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-indigo-400 hover:text-indigo-300 hover:bg-transparent disabled:opacity-50"
               >
-                <Send className="w-5 h-5" />
+                <Send className="w-5 h-5" aria-hidden="true" />
               </Button>
             </form>
           </div>

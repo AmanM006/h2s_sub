@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { GoogleMap, useJsApiLoader, DirectionsRenderer } from '@react-google-maps/api';
 import { db } from '@/lib/firebase';
 import { ref, set } from 'firebase/database';
@@ -75,7 +75,7 @@ function AdvancedMarker({
   );
 }
 
-export default function StadiumMap({
+function StadiumMapComponent({
   activeLocation,
   onLocationSelect,
   locationsList
@@ -186,7 +186,7 @@ export default function StadiumMap({
   };
 
   return isLoaded ? (
-    <div className="w-full h-full relative z-0">
+    <div className="w-full h-full relative z-0" aria-label="Stadium interactive map" role="region">
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={center}
@@ -225,9 +225,10 @@ export default function StadiumMap({
       {/* Floating Locate Me Button */}
       <Button 
         onClick={locateMe}
+        aria-label="Use my location to find nearby facilities"
         className="absolute top-4 left-4 bg-[#1C1C1C]/90 backdrop-blur-md text-white border border-white/10 shadow-lg hover:bg-[#2C2C2C] rounded-full px-4 h-12 flex items-center gap-2 z-10"
       >
-        <Navigation className="w-5 h-5" />
+        <Navigation className="w-5 h-5" aria-hidden="true" />
         <span className="font-medium">Use My Location</span>
       </Button>
 
@@ -258,6 +259,7 @@ export default function StadiumMap({
             <Button 
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl mt-2"
               onClick={calculateRoute}
+              aria-label={`Get walking directions to ${currentActiveMarker.name}`}
             >
               Get Directions
             </Button>
@@ -267,8 +269,9 @@ export default function StadiumMap({
               if (onLocationSelect) onLocationSelect(null);
             }}
             className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            aria-label="Close details"
           >
-            ✕
+            <span aria-hidden="true">✕</span>
           </button>
         </Card>
       )}
@@ -282,3 +285,6 @@ export default function StadiumMap({
     </div>
   );
 }
+
+const StadiumMap = memo(StadiumMapComponent);
+export default StadiumMap;

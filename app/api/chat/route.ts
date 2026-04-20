@@ -2,19 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { db } from '@/lib/firebase';
 import { ref, get } from 'firebase/database';
+import { z } from 'zod';
+import { logInfo, logError } from '@/lib/gcp-logger';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
+// Zod schema for strict input validation
+const chatRequestSchema = z.object({
+  message: z.string().min(1, 'Message cannot be empty').max(2000, 'Message too long'),
+  venueData: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      type: z.string(),
+      waitTime: z.number(),
+      lat: z.number(),
+      lng: z.number(),
+    })
+  ).optional().default([]),
+});
+
 export async function POST(req: NextRequest) {
   try {
-    const { message, venueData } = await req.json();
+    const body = await req.json();
 
-    if (!message) {
-      return NextResponse.json({ error: "Message is required" }, { status: 400 });
+    // Validate and sanitize input with zod
+    const parseResult = chatRequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      logWarning('Invalid chat request', { errors: parseResult.error.flatten() });
+      return NextResponse.json(
+        { error: parseResult.error.issues[0]?.message || "Invalid input" },
+        { status: 400 }
+      );
     }
 
+    const { message, venueData } = parseResult.data;
+
+    await logInfo('Chat request received', { messageLength: message.length });
+
     // Fetch wait times from Firebase
-    let latestVenueData = venueData || [];
+    let latestVenueData = venueData;
     try {
       const snapshot = await get(ref(db, 'venue/hotspots'));
       if (snapshot.exists()) {
@@ -39,9 +66,17 @@ export async function POST(req: NextRequest) {
     const result = await model.generateContent(message);
     const text = result.response.text();
 
+    await logInfo('Chat response generated', { responseLength: text.length });
+
     return NextResponse.json({ reply: text });
   } catch (error) {
+    await logError('Chat API Error', { error: String(error) });
     console.error("Chat API Error:", error);
     return NextResponse.json({ error: "Failed to generate response" }, { status: 500 });
   }
+}
+
+// Re-export for convenience — avoids circular import in tests
+function logWarning(msg: string, meta?: Record<string, unknown>) {
+  import('@/lib/gcp-logger').then(m => m.logWarning(msg, meta)).catch(() => console.warn(msg, meta));
 }
