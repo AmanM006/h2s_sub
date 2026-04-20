@@ -1,36 +1,16 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Venue Copilot
 
-## Getting Started
+## Chosen Vertical
+**Physical Event Experience:** An intelligent, real-time stadium assistant designed to improve crowd movement, waiting times, and spatial coordination at large-scale sporting venues.
 
-First, run the development server:
+## Approach and Logic
+The application utilizes a Next.js frontend with a FastAPI-inspired route structure. It leverages Firebase Realtime Database as the single source of truth for venue hotspots (restrooms, food, exits). User geolocation calculates dynamic proximity to these hotspots. The Gemini 2.5 Flash model acts as the reasoning engine, ingesting the live Firebase data to provide context-aware, spatial navigation advice.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## How the Solution Works
+1. **Live State:** Firebase continuously syncs wait times and coordinate data for venue facilities.
+2. **Spatial Awareness:** The Google Maps API (`AdvancedMarkerElement` and `DirectionsService`) dynamically renders the user's location and calculates walking routes to facilities.
+3. **AI Navigation:** The chatbot does not give generic advice; it reads the live database to recommend the fastest exits or shortest food lines based on the user's explicit location.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Assumptions Made
+* Attendees have access to a mobile browser with geolocation permissions enabled.
+* Venue management has an active system (or IoT sensors) pushing live queue times to the Firebase database.
