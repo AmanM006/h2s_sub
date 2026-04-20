@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useRef, useEffect } from 'react';
 import StadiumMap, { MarkerData } from '@/components/StadiumMap';
 import { Card } from '@/components/ui/card';

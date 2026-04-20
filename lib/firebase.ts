@@ -11,10 +11,14 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-if (!firebaseConfig.apiKey) {
-  console.warn("Firebase configuration is missing NEXT_PUBLIC_FIREBASE_API_KEY. Ensure environment variables are set.");
+// Lazy initialization: only init Firebase when keys are actually present.
+// During Next.js static analysis / build phase, env vars may be missing.
+if (typeof window !== 'undefined' || process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+  if (!getApps().length) {
+    initializeApp(firebaseConfig);
+  }
 }
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const db = getDatabase(app) as Database;
+const app = getApps().length > 0 ? getApp() : null;
+export const db = (app ? getDatabase(app) : null) as Database;
 export { app };
