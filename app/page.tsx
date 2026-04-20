@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import StadiumMap, { dummyData, MarkerData } from '@/components/StadiumMap';
+import StadiumMap, { MarkerData } from '@/components/StadiumMap';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { ArrowLeft, Info, Send, TriangleAlert, MapPin, Search } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { ref, onValue } from 'firebase/database';
 
 export default function Home() {
   const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([
@@ -18,6 +19,7 @@ export default function Home() {
   
   // For map integration
   const [activeLocation, setActiveLocation] = useState<MarkerData | null>(null);
+  const [locationsList, setLocationsList] = useState<MarkerData[]>([]);
 
   // Filters
   const [filter, setFilter] = useState('all');
@@ -30,6 +32,26 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    const hotspotsRef = ref(db, 'venue/hotspots');
+    const unsubscribe = onValue(hotspotsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const parsedMarkers = Object.keys(data).map(key => ({
+          id: key,
+          ...data[key]
+        }));
+        setLocationsList(parsedMarkers);
+      } else {
+        setLocationsList([]);
+      }
+    }, (error) => {
+      console.log("Firebase fetch error:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +66,7 @@ export default function Home() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg }),
+        body: JSON.stringify({ message: userMsg, venueData: locationsList }),
       });
       
       const data = await res.json();
@@ -62,9 +84,6 @@ export default function Home() {
     }
   };
 
-  // Convert dummy data object to array for the list
-  const locationsList = Object.entries(dummyData).map(([id, data]) => ({ id, ...data }));
-  
   // Apply filters and sorting
   let filteredLocations = locationsList.filter(loc => filter === 'all' || loc.type === filter);
   if (sort === 'wait_asc') {
@@ -80,7 +99,7 @@ export default function Home() {
       <Card className="w-[420px] h-full flex flex-col bg-[#1C1C1C] text-white border-none rounded-3xl overflow-hidden shadow-2xl z-10 shrink-0">
         
         {/* Header Section */}
-        <div className="px-6 pt-8 pb-4 flex flex-col gap-6">
+        <div className="px-6 pt-8 pb-4 flex flex-col gap-6 shrink-0">
           <div className="flex items-center justify-between">
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full w-8 h-8">
               <ArrowLeft className="w-5 h-5" />
@@ -128,142 +147,94 @@ export default function Home() {
         </div>
 
         {/* Scrollable Content Area */}
-        <ScrollArea className="flex-1 px-4 pb-6">
-          <div className="flex flex-col gap-6">
-            
-            {/* AI Chat Area */}
-            <div className="flex flex-col gap-3">
-              <div className="bg-[#232323] rounded-2xl p-4 border border-white/5 shadow-inner">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                  AI Assistant
-                </h3>
-                <div className="flex flex-col gap-4 max-h-[300px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
-                  {messages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] p-3 rounded-2xl text-sm shadow-md ${
-                        msg.role === 'user' 
-                          ? 'bg-indigo-600 text-white rounded-tr-sm' 
-                          : 'bg-[#333] text-gray-100 rounded-tl-sm border border-white/5'
-                      }`}>
-                        {msg.content}
-                      </div>
+        <div className="flex-1 px-4 pb-6 overflow-hidden flex flex-col min-h-0">
+          {/* AI Chat Area */}
+          <div className="flex flex-col gap-3 shrink-0">
+            <div className="bg-[#232323] rounded-2xl p-4 border border-white/5 shadow-inner">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                AI Assistant
+              </h3>
+              <div className="flex flex-col gap-4 max-h-[250px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] p-3 rounded-2xl text-sm shadow-md ${
+                      msg.role === 'user' 
+                        ? 'bg-indigo-600 text-white rounded-tr-sm' 
+                        : 'bg-[#333] text-gray-100 rounded-tl-sm border border-white/5'
+                    }`}>
+                      {msg.content}
                     </div>
-                  ))}
-                  {isLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-[#333] p-3 rounded-2xl rounded-tl-sm border border-white/5 flex gap-1 items-center h-10">
-                        <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></span>
-                        <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></span>
-                        <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></span>
-                      </div>
+                  </div>
+                ))}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-[#333] p-3 rounded-2xl rounded-tl-sm border border-white/5 flex gap-1 items-center h-10">
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></span>
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></span>
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></span>
                     </div>
-                  )}
-                  <div ref={messagesEndRef} />
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+
+            {/* Chat Input moved below chat window */}
+            <form onSubmit={sendMessage} className="relative mt-1">
+              <Input 
+                placeholder="Ask about lines, exits, food..." 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                disabled={isLoading}
+                className="w-full bg-[#2A2A2A] border-none rounded-xl h-12 pl-4 pr-12 text-white placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-indigo-500 shadow-inner"
+              />
+              <Button 
+                type="submit" 
+                size="icon" 
+                variant="ghost" 
+                disabled={isLoading || !input.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-indigo-400 hover:text-indigo-300 hover:bg-transparent disabled:opacity-50"
+              >
+                <Send className="w-5 h-5" />
+              </Button>
+            </form>
+          </div>
+
+          {/* List of Facilities */}
+          <div className="flex flex-col gap-1 px-2 mt-4 overflow-y-auto flex-1 min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 shrink-0">Live Status</h3>
+            {filteredLocations.map((loc) => (
+              <div 
+                key={loc.id} 
+                onClick={() => setActiveLocation(loc)}
+                className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all shrink-0 ${
+                  activeLocation?.id === loc.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'
+                }`}
+              >
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
+                  <span className="text-xl">{loc.type === 'food' ? '🍔' : loc.type === 'restroom' ? '🚻' : '🚪'}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold text-white truncate">{loc.name}</h4>
+                  <p className="text-sm text-gray-400 flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> 0.2 mi • <span className={loc.waitTime < 5 ? 'text-green-400' : loc.waitTime > 15 ? 'text-red-400' : 'text-yellow-400'}>
+                      {loc.waitTime} min wait
+                    </span>
+                  </p>
                 </div>
               </div>
-
-              {/* Chat Input moved below chat window */}
-              <form onSubmit={sendMessage} className="relative mt-1">
-                <Input 
-                  placeholder="Ask about lines, exits, food..." 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  disabled={isLoading}
-                  className="w-full bg-[#2A2A2A] border-none rounded-xl h-12 pl-4 pr-12 text-white placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-indigo-500 shadow-inner"
-                />
-                <Button 
-                  type="submit" 
-                  size="icon" 
-                  variant="ghost" 
-                  disabled={isLoading || !input.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 text-indigo-400 hover:text-indigo-300 hover:bg-transparent disabled:opacity-50"
-                >
-                  <Send className="w-5 h-5" />
-                </Button>
-              </form>
-            </div>
-
-            {/* List of Facilities */}
-            <div className="flex flex-col gap-1 px-2 mt-2">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Live Status</h3>
-              {filteredLocations.map((loc) => (
-                <div 
-                  key={loc.id} 
-                  onClick={() => setActiveLocation(loc)}
-                  className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all ${
-                    activeLocation?.id === loc.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'
-                  }`}
-                >
-                  <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
-                    <span className="text-xl">{loc.type === 'food' ? '🍔' : loc.type === 'restroom' ? '🚻' : '🚪'}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-white truncate">{loc.name}</h4>
-                    <p className="text-sm text-gray-400 flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> 0.2 mi • <span className={loc.waitTime < 5 ? 'text-green-400' : loc.waitTime > 15 ? 'text-red-400' : 'text-yellow-400'}>
-                        {loc.waitTime} min wait
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {filteredLocations.length === 0 && (
-                <div className="text-gray-500 text-sm py-4 text-center">No locations match your filter.</div>
-              )}
-            </div>
-
+            ))}
+            {filteredLocations.length === 0 && (
+              <div className="text-gray-500 text-sm py-4 text-center">No locations match your filter.</div>
+            )}
           </div>
-        </ScrollArea>
+        </div>
       </Card>
 
       {/* Main Map Area */}
       <div className="flex-1 relative rounded-[32px] overflow-hidden shadow-2xl ring-1 ring-black/5 bg-[#1C1C1C]">
-        <StadiumMap activeLocation={activeLocation} onLocationSelect={setActiveLocation} />
-        
-        {/* Floating Card Detail View on Map */}
-        {activeLocation && (
-          <Card className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-[#1C1C1C]/90 backdrop-blur-xl border border-white/10 text-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-20">
-            <div className="p-5 flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
-                  <span className="text-xl">{activeLocation.type === 'food' ? '🍔' : activeLocation.type === 'restroom' ? '🚻' : '🚪'}</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg">{activeLocation.name}</h3>
-                  <p className="text-sm text-gray-400">0.2 mi • Open now</p>
-                </div>
-              </div>
-              
-              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 border border-white/10 text-xs font-medium">
-                <div className="flex items-center gap-2"><span className="text-lg">🕒</span> {activeLocation.waitTime} min</div>
-                <div className="w-px h-4 bg-white/20"></div>
-                <div>Open 'til 10pm</div>
-                <div className="w-px h-4 bg-white/20"></div>
-                <div className="text-green-400 font-bold">Fastest</div>
-              </div>
-              
-              <div className="text-sm text-gray-300">
-                This is the nearest {activeLocation.type} facility to your current location. Based on historical data, the line moves quickly.
-              </div>
-              
-              <Button 
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl mt-2"
-                onClick={() => {
-                  window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeLocation.lat},${activeLocation.lng}`, '_blank');
-                }}
-              >
-                Get Directions
-              </Button>
-            </div>
-            <button 
-              onClick={() => setActiveLocation(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            >
-              ✕
-            </button>
-          </Card>
-        )}
+        <StadiumMap activeLocation={activeLocation} onLocationSelect={setActiveLocation} locationsList={locationsList} />
       </div>
 
     </div>

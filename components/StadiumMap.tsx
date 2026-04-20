@@ -1,18 +1,16 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, DirectionsRenderer } from '@react-google-maps/api';
 import { db } from '@/lib/firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, set } from 'firebase/database';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Navigation } from 'lucide-react';
 
 const containerStyle = {
   width: '100%',
   height: '100%'
-};
-
-const center = {
-  lat: 23.0919,
-  lng: 72.5975
 };
 
 export type MarkerData = {
@@ -22,13 +20,6 @@ export type MarkerData = {
   waitTime: number;
   lat: number;
   lng: number;
-};
-
-export const dummyData: Record<string, Omit<MarkerData, 'id'>> = {
-  "hotdogs_a": { name: "Hotdogs (Gate A)", type: "food", waitTime: 5, lat: 23.0925, lng: 72.5980 },
-  "burgers_b": { name: "Burgers (Gate B)", type: "food", waitTime: 20, lat: 23.0915, lng: 72.5970 },
-  "restroom_n": { name: "Restroom (North)", type: "restroom", waitTime: 2, lat: 23.0930, lng: 72.5975 },
-  "exit_e": { name: "East Exit", type: "exit", waitTime: 15, lat: 23.0919, lng: 72.5990 }
 };
 
 const libraries: ("marker")[] = ["marker"];
@@ -48,7 +39,6 @@ function AdvancedMarker({
   useEffect(() => {
     if (!map || !contentRef.current) return;
     
-    // Create the advanced marker
     const m = new google.maps.marker.AdvancedMarkerElement({
       map,
       position: { lat: data.lat, lng: data.lng },
@@ -56,7 +46,6 @@ function AdvancedMarker({
       content: contentRef.current,
     });
 
-    // Add click listener using gmp-click to avoid warnings with AdvancedMarkers
     m.addListener('gmp-click', () => {
       onClick(data);
     });
@@ -69,7 +58,6 @@ function AdvancedMarker({
     };
   }, [map, data, onClick]);
 
-  // The custom HTML for the marker (glassmorphism UI matching the dark theme)
   return (
     <div ref={contentRef} className="cursor-pointer group flex flex-col items-center">
       <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-transparent group-hover:border-indigo-500 transition-all overflow-hidden relative">
@@ -89,10 +77,12 @@ function AdvancedMarker({
 
 export default function StadiumMap({
   activeLocation,
-  onLocationSelect
+  onLocationSelect,
+  locationsList
 }: {
   activeLocation?: MarkerData | null,
-  onLocationSelect?: (location: MarkerData) => void
+  onLocationSelect?: (location: MarkerData | null) => void,
+  locationsList: MarkerData[]
 }) {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -101,39 +91,17 @@ export default function StadiumMap({
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [markers, setMarkers] = useState<MarkerData[]>(
-    Object.entries(dummyData).map(([id, data]) => ({ id, ...data }))
-  );
+  const [center, setCenter] = useState({ lat: 23.0919, lng: 72.5975 });
+  const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
   
-  // Track selected marker internally if not provided via props
-  const [internalActiveMarker, setInternalActiveMarker] = useState<MarkerData | null>(null);
-  const currentActiveMarker = activeLocation !== undefined ? activeLocation : internalActiveMarker;
-
-  useEffect(() => {
-    try {
-      const stadiumRef = ref(db, 'stadium');
-      const unsubscribe = onValue(stadiumRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const parsedMarkers = Object.keys(data).map(key => ({
-            id: key,
-            ...data[key]
-          }));
-          setMarkers(parsedMarkers);
-        }
-      }, (error) => {
-        console.log("Firebase fetch error, using dummy data:", error);
-      });
-      return () => unsubscribe();
-    } catch (error) {
-      console.log("Firebase not initialized correctly, using dummy data:", error);
-    }
-  }, []);
+  const currentActiveMarker = activeLocation !== undefined ? activeLocation : null;
 
   useEffect(() => {
     if (map && currentActiveMarker) {
       map.panTo({ lat: currentActiveMarker.lat, lng: currentActiveMarker.lng });
-      // Remove zoom setting here to allow user to pan around freely without snapping zoom constantly
+    } else if (directionsResponse) {
+       // Clear directions if marker is deselected
+       setDirectionsResponse(null);
     }
   }, [map, currentActiveMarker]);
 
@@ -148,10 +116,74 @@ export default function StadiumMap({
   const handleMarkerClick = useCallback((data: MarkerData) => {
     if (onLocationSelect) {
       onLocationSelect(data);
-    } else {
-      setInternalActiveMarker(data);
     }
+    setDirectionsResponse(null); // Reset directions on new selection
   }, [onLocationSelect]);
+
+  const generateDummyMarkers = (lat: number, lng: number) => {
+    const newMarkers = {
+      "food_1": { name: "Burger Stand", type: "food", waitTime: Math.floor(Math.random() * 20) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
+      "food_2": { name: "Pizza Corner", type: "food", waitTime: Math.floor(Math.random() * 15) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
+      "restroom_1": { name: "Restroom (East)", type: "restroom", waitTime: Math.floor(Math.random() * 5) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
+      "restroom_2": { name: "Restroom (West)", type: "restroom", waitTime: Math.floor(Math.random() * 5) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
+      "exit_1": { name: "Main Exit", type: "exit", waitTime: Math.floor(Math.random() * 10) + 1, lat: lat + (Math.random() - 0.5) * 0.005, lng: lng + (Math.random() - 0.5) * 0.005 },
+    };
+  
+    const hotspotsRef = ref(db, 'venue/hotspots');
+    set(hotspotsRef, newMarkers).then(() => {
+      console.log("Updated dummy markers in Firebase.");
+    }).catch(err => console.error("Error setting markers:", err));
+  };
+
+  const locateMe = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        const newCenter = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setCenter(newCenter);
+        if (map) {
+          map.panTo(newCenter);
+          map.setZoom(16);
+        }
+        generateDummyMarkers(newCenter.lat, newCenter.lng);
+        setDirectionsResponse(null); // Clear directions
+        if (onLocationSelect) onLocationSelect(null); // Deselect active location
+      }, (err) => {
+        console.error("Geolocation error:", err);
+        alert("Failed to get your location. Please check browser permissions.");
+      });
+    } else {
+      alert("Geolocation is not supported by your browser.");
+    }
+  };
+
+  const calculateRoute = () => {
+    if (!currentActiveMarker) return;
+    
+    // Use the map's current center as the origin for directions
+    // Ideally we would track user location, but map center is a good proxy since Locate Me centers the map
+    const origin = center; 
+    
+    const directionsService = new window.google.maps.DirectionsService();
+    
+    directionsService.route(
+      {
+        origin: origin,
+        destination: { lat: currentActiveMarker.lat, lng: currentActiveMarker.lng },
+        travelMode: window.google.maps.TravelMode.WALKING,
+      },
+      (result, status) => {
+        if (status === window.google.maps.DirectionsStatus.OK) {
+          setDirectionsResponse(result);
+        } else {
+          console.error(`Error fetching directions: ${status}`);
+          alert("Could not calculate walking directions to this facility.");
+        }
+      }
+    );
+  };
 
   return isLoaded ? (
     <div className="w-full h-full relative z-0">
@@ -166,7 +198,7 @@ export default function StadiumMap({
           disableDefaultUI: true,
         }}
       >
-        {map && markers.map((marker) => (
+        {map && locationsList.map((marker) => (
           <AdvancedMarker
             key={marker.id}
             map={map}
@@ -174,7 +206,72 @@ export default function StadiumMap({
             onClick={handleMarkerClick}
           />
         ))}
+
+        {directionsResponse && (
+          <DirectionsRenderer 
+            directions={directionsResponse} 
+            options={{ 
+              suppressMarkers: true,
+              polylineOptions: {
+                strokeColor: '#6366f1',
+                strokeWeight: 6,
+                strokeOpacity: 0.8
+              }
+            }} 
+          />
+        )}
       </GoogleMap>
+
+      {/* Floating Locate Me Button */}
+      <Button 
+        onClick={locateMe}
+        className="absolute top-4 left-4 bg-[#1C1C1C]/90 backdrop-blur-md text-white border border-white/10 shadow-lg hover:bg-[#2C2C2C] rounded-full px-4 h-12 flex items-center gap-2 z-10"
+      >
+        <Navigation className="w-5 h-5" />
+        <span className="font-medium">Use My Location</span>
+      </Button>
+
+      {/* Floating Card Detail View on Map */}
+      {currentActiveMarker && (
+        <Card className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-[#1C1C1C]/90 backdrop-blur-xl border border-white/10 text-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden z-20">
+          <div className="p-5 flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
+                <span className="text-xl">{currentActiveMarker.type === 'food' ? '🍔' : currentActiveMarker.type === 'restroom' ? '🚻' : '🚪'}</span>
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">{currentActiveMarker.name}</h3>
+                <p className="text-sm text-gray-400">Walking • Open now</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 border border-white/10 text-xs font-medium">
+              <div className="flex items-center gap-2"><span className="text-lg">🕒</span> {currentActiveMarker.waitTime} min wait</div>
+              <div className="w-px h-4 bg-white/20"></div>
+              <div className="text-green-400 font-bold">Fastest</div>
+            </div>
+            
+            <div className="text-sm text-gray-300">
+              This is the nearest {currentActiveMarker.type} facility to your current location. Based on live data, the line moves quickly.
+            </div>
+            
+            <Button 
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl mt-2"
+              onClick={calculateRoute}
+            >
+              Get Directions
+            </Button>
+          </div>
+          <button 
+            onClick={() => {
+              if (onLocationSelect) onLocationSelect(null);
+            }}
+            className="absolute top-4 right-4 text-gray-400 hover:text-white"
+          >
+            ✕
+          </button>
+        </Card>
+      )}
     </div>
   ) : (
     <div className="w-full h-full flex items-center justify-center bg-[#111111] text-white">
